@@ -1,0 +1,70 @@
+import pandas as pd
+import pyodbc
+import Levenshtein
+
+# Function to concatenate names, avoiding 'NaN' values
+def concatenate_name(first_name, infix, surname):
+    first_name = first_name if pd.notna(first_name) else ''
+    infix = infix if pd.notna(infix) else ''
+    surname = surname if pd.notna(surname) else ''
+    name = f"{first_name} {infix} {surname}".strip()
+    return ' '.join(name.split())
+
+# Function to connect to the Access database and read a table
+def read_access_db(db_file, table_name):
+    conn_str = (
+        r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+        f'DBQ={db_file};'
+    )
+    conn = pyodbc.connect(conn_str)
+    query = f'SELECT * FROM {table_name}'
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return df
+
+# Function to compare the CSV and Access database data
+def compare_csv_and_access(csv_file, access_db_file, table_name, threshold=3):
+    # Step 1: Read the CSV file
+    df1 = pd.read_csv(csv_file, encoding='ISO-8859-1')
+    
+    # Step 2: Read the Access database file for clerus data
+    df_clerus = read_access_db(access_db_file, table_name)
+    
+    # Step 3: Read the Access database file for DRC data
+    df_drc = read_access_db(access_db_file, '02_drc_org')  # Reading the second table
+
+    # Step 4: Merge the two Access DataFrames on clerus_id and drc_id
+    df_clerus = df_clerus[['clerus_id', 'first_name', 'infix', 'surname']]  # Selecting relevant columns
+    df_combined = pd.merge(df_clerus, df_drc[['drc_id', 'original_input_drc']], left_on='clerus_id', right_on='drc_id', how='left')
+    
+    # Step 5: Create concatenated full name columns for both DataFrames
+    df1['full_name'] = df1.apply(lambda row: concatenate_name(row['first_name'], row['infix'], row['surname']), axis=1)
+    df_combined['full_name'] = df_combined.apply(lambda row: concatenate_name(row['first_name'], row['infix'], row['surname']), axis=1)
+    
+    # Step 6: Compare names using Levenshtein distance
+    matches = []
+    for i, row1 in df1.iterrows():
+        for j, row2 in df_combined.iterrows():
+            distance = Levenshtein.distance(row1['full_name'], row2['full_name'])
+            if distance <= threshold:
+                match = {
+                    'csv1_name': row1['full_name'],
+                    'csv2_name': row2['full_name'],
+                    'distance': distance
+                }
+                # Add other columns from both DataFrames
+                match.update({f"csv1_{col}": row1[col] for col in df1.columns if col != 'id'})
+                match.update({f"csv2_{col}": row2[col] for col in df_combined.columns})
+                matches.append(match)
+    
+    # Step 7: Create a DataFrame with the matches and save to Excel
+    matches_df = pd.DataFrame(matches)
+    matches_df.to_excel(r'C:\Users\Doreen\OneDrive\Documenten\Python\matched_names_access_all.xlsx', index=False)
+    print(f"Comparison complete. {len(matches)} matches found. Results saved to 'matched_names_access_all.xlsx'.")
+
+# Example usage
+csv_file = r'C:\Users\Doreen\OneDrive\Documenten\DigiDuRe\Proponenten\Levenshtein\dvdb_acta_der_particuliere_synoden_van_ZH_2024.csv'  # Path to your CSV file
+access_db_file = r'C:\Users\Doreen\OneDrive\Documenten\DigiDuRe\Proponenten\Levenshtein\CLERUS_v1_DRC_07082024.accdb'  # Path to your Access database file
+table_name = '01_clerus_bio'  # Replace with the table name in Access
+
+compare_csv_and_access(csv_file, access_db_file, table_name, threshold=3)
