@@ -1,0 +1,45 @@
+import pandas as pd
+import os
+
+# Load the CSV files into DataFrames
+csv_a = pd.read_csv(r'C:\Users\Doreen\OneDrive\Documenten\DigiDuRe\Proponenten\Levenshtein\Mix_dvdb_acta_der_particuliere_synoden_van_ZH_2024.csv')  # CSV A with all rows
+csv_b = pd.read_csv(r'C:\Users\Doreen\OneDrive\Documenten\DigiDuRe\Proponenten\Levenshtein\Mix_matched_names_access_all_20241101v2.csv')  # CSV B with additional information
+
+# Define key columns
+id_column = 'csv1_Acta_zh_id'  # Unique identifier
+clerus_id_column = 'clerus_id'  # Column to check for non-NaN values
+
+# Filter rows in CSV B with a valid clerus_id
+rows_with_clerus_id = csv_b[csv_b[clerus_id_column].notna()]
+
+# Merge CSV A with filtered CSV B on the unique identifier
+# Use a left join to keep all rows from CSV A and add matching rows from CSV B
+columns_to_add = [
+    'csv1_Acta_zh_id', 
+    'csv1_name', 
+    'csv2_name', 
+    'distance', 
+    'csv1_clerus_id', 
+    'csv2_clerus_id', 
+    'clerus_id', 
+    'csv2_original_input_drc'
+]
+merged = pd.merge(
+    csv_a,
+    rows_with_clerus_id[columns_to_add],  # Only include specified columns from CSV B
+    on=id_column,
+    how='left'
+)
+
+# Output directory and file name
+output_directory = r"C:\Users\Doreen\OneDrive\Documenten\DigiDuRe\Proponenten\Levenshtein"
+output_filename = "Final_Combined_CSV.csv"
+
+# Ensure the output directory exists
+os.makedirs(output_directory, exist_ok=True)
+
+# Save the merged DataFrame to a CSV file
+output_path = os.path.join(output_directory, output_filename)
+merged.to_csv(output_path, index=False)
+
+print(f"Het gecombineerde bestand is opgeslagen in: {output_path}")
